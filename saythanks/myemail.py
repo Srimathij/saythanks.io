@@ -75,3 +75,4 @@ def notify(note, email_address):
     except Exception as e:
         logging.error("General Error occurred: " + str(e))
         print(e)
+
