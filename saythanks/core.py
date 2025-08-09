@@ -281,13 +281,23 @@ def archive_note(uuid):
 
 
 #@app.route('/to/<inbox_id>/submit', methods=['POST'])
-@app.route('/to/<inbox_id>/submit', methods=['POST'], defaults={"topic": ""})
-@app.route('/to/<inbox_id>/submit/<topic>', methods=['POST'])
-def submit_note(inbox_id, topic):
+## audio path changes only in submit_note
+@app.route('/to/<inbox>/submit', methods=['POST'])
+def submit_note(inbox):
     """Store note in database and send a copy to user's email."""
     # Fetch the current inbox.
-    # print("topic", topic)
-    inbox_db = storage.Inbox(inbox_id)
+    inbox_db = storage.Inbox(inbox)
+    audio_file = request.files.get('audio')
+    audio_filename = None
+
+    if audio_file:
+        upload_folder = os.path.join(app.static_folder, 'recordings')
+        os.makedirs(upload_folder, exist_ok=True)
+        audio_filename = f"{inbox}_{audio_file.filename}"
+        save_path = os.path.join(upload_folder, audio_filename)
+        audio_file.save(save_path)
+
+
     body = request.form['body']
     content_type = request.form['content-type']
     byline = Markup(request.form['byline'])
@@ -299,37 +309,22 @@ def submit_note(inbox_id, topic):
 
     if content_type == 'html':
         body = Markup(body)
-        # print("after markup", body)
-        # Store the note first, so it gets a UUID
-        submitted_note = inbox_db.submit_note(body=body, byline=byline)
+        note = storage.Note.from_inbox(inbox=None, body=body, byline=byline, audio_path=audio_filename)
         if storage.Inbox.is_email_enabled(inbox_db.slug):
+            # note.notify(email_address)
             if session:
                 email_address = session['profile']['email']
             else:
                 email_address = storage.Inbox.get_email(inbox_db.slug)
-            # Now notify, so the note has a UUID for the public URL
-            submitted_note.notify(email_address, topic)
+            note.notify(email_address)
+        body = remove_tags(body)
+        note = inbox_db.submit_note(body=body, byline=byline, audio_path=audio_filename)
+
         return redirect(url_for('thanks'))
     # Strip any HTML away.
 
-    body = markdown(body, extensions=['tables', 'fenced_code'])
-    # Inject CSS for better table rendering
-    table_style = """
-<style>
-table {
-    width: 100%;
-    table-layout: auto;
-    border-collapse: collapse;
-}
-th, td {
-    padding: 8px;
-    border: 1px solid #ddd;
-    word-break: break-word;
-}
-</style>
-"""
-    body = table_style + body
-    #body = remove_tags(body)
+    body = markdown(body)
+    body = remove_tags(body)
     byline = Markup(request.form['byline']).striptags()
     # Assert that the body has length.
     if not body:
@@ -337,17 +332,18 @@ th, td {
         return redirect(url_for('thanks'))
 
     # Store the incoming note to the database.
-    submitted_note = inbox_db.submit_note(body=body, byline=byline)
+    note = inbox_db.submit_note(body=body, byline=byline, audio_path=audio_filename)
+
     # Email the user the new note.
     if storage.Inbox.is_email_enabled(inbox_db.slug):
+        # note.notify(email_address)
         if session:
             email_address = session['profile']['email']
         else:
             email_address = storage.Inbox.get_email(inbox_db.slug)
-        submitted_note.notify(email_address, topic)
+        note.notify(email_address)
 
     return redirect(url_for('thanks'))
-
 
 @app.route('/logout', methods=["POST"])
 def user_logout():
