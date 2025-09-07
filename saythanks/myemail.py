@@ -56,23 +56,18 @@ def notify(note, email_address, topic=None):
     The email includes:
     - The note's body and byline.
     - A public URL for the note, allowing the user to share it with others.
-        - If the note has a UUID, the URL is generated using Flask's `url_for`
-        with the 'share_note' route.
-        - If the note lacks a UUID, the URL field in the email will be left blank
-        and an error is logged.
+    - An optional audio link if the note includes an audio_path.
 
     Args:
         note: An object representing the note, expected to have 'body', 'byline',
-            and 'uuid' attributes.
+            'uuid', and optionally 'audio_path'.
         email_address: The recipient's email address.
+        topic (str): Optional subject tag for the note.
 
-    The function logs errors if the note's UUID is missing or if sending the email
-    fails but ensures the note is still saved even if email delivery fails.
-    
     Returns:
         bool: True if email was sent successfully, False otherwise
     """
-    # print("myemail:notify", topic) # Debugging line to check topic
+    # print("myemail:notify", topic) # Debugging line
 
     # Check if MailerSend is properly configured
     if mailer is None:
@@ -89,12 +84,25 @@ def notify(note, email_address, topic=None):
 
         # Say 'someone' if the byline is empty.
         who = note.byline or 'someone'
-
         subject = f'saythanks.io: {who} sent a note!' if not topic \
             else f'saythanks.io: {who} sent a note about {topic}!'
 
-        html_content = TEMPLATE.format(note.body, note.byline, note_url)
-        # print("\n\n***html_content", html_content)  # Debugging line to check html_body
+        # ---- AUDIO HANDLING ----
+        audio_html = ''
+        if hasattr(note, 'audio_path') and note.audio_path:
+            with current_app.app_context():
+                audio_url = url_for(
+                    "static",
+                    filename="recordings/" + note.audio_path,
+                    _external=True
+                )
+            audio_html = (
+                f'<br><br><strong>🎧 Voice Note:</strong> '
+                f'<a href="{audio_url}" target="_blank">Click to listen</a>'
+            )
+        # ------------------------
+
+        html_content = TEMPLATE.format(note.body + audio_html, note.byline, note_url)
         plaintext_content = f"{note.body}\n\n--{note.byline or ''}\n\n{note_url}"
 
         mail_body = {}
